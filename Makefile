@@ -8,4 +8,7 @@ test.bin: test.o
 
 test.o: test.S
 	as -32 test.S -o test.o
+
+clean:
+	rm kvmsample main.o perf.data test.bin test.o
 	
