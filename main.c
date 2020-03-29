@@ -1,21 +1,43 @@
 /*
  * KVM API Sample.
  */
+#define _GNU_SOURCE
 #include <assert.h>
 #include <fcntl.h>
-#include <linux/kvm.h>
 #include <memory.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
+
+#include <linux/kvm.h>
+
+#include <sys/fcntl.h>
+#include <sys/ioctl.h>
 #include <sys/mman.h>
+#include <sys/prctl.h>
+#include <sys/stat.h>
 
 #define KVM_DEVICE "/dev/kvm"
 #define RAM_SIZE 512000000
 #define CODE_START 0x1000
 #define BINARY_FILE "test.bin"
-#define VCPU_NUM 4
+#define VCPU_NUM 2
 #define INTERVAL 100000
+
+#define PCPU_NUM 4
+#define CPU_AFFINITY
+
+#define BIND_CPU(cpu) {\
+  cpu_set_t mask; \
+  CPU_ZERO(&mask);\
+  CPU_SET((cpu) % PCPU_NUM, &mask);\
+  if (pthread_setaffinity_np(pthread_self(), sizeof(mask), &mask) < 0) {\
+    perror("pthread_setaffinity_np");\
+  }\
+}
+
+// pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
 struct kvm {
   int dev_fd;
@@ -78,6 +100,20 @@ void *kvm_cpu_thread(void *data) {
   struct vcpu *vcpu = (struct vcpu *)data;
   int ret = 0;
   kvm_reset_vcpu(vcpu);
+
+#ifdef CPU_AFFINITY
+  BIND_CPU(vcpu->vcpu_id);
+#endif
+
+// pthread_mutex_lock(&mutex);
+//   char thread_name[16];
+//   sprintf(thread_name, "simple-qemu-%d", vcpu->vcpu_id);
+//   printf("%s\n",thread_name);
+//   exit(0);
+//   if (prctl(PR_SET_NAME, thread_name) < 0)
+//     perror("prctl");
+//     pthread_mutex_unlock(&mutex);
+// #endif
 
   while (1) {
     printf("KVM vcpu[%d] start running\n", vcpu->vcpu_id);
@@ -222,7 +258,7 @@ struct vcpu *kvm_init_vcpu(struct kvm *kvm, int vcpu_id, void *(*fn)(void *)) {
     return NULL;
   }
 
-  printf("%d\n", vcpu->kvm_run_mmap_size);
+  // printf("%d\n", vcpu->kvm_run_mmap_size);
   vcpu->kvm_run = mmap(NULL, vcpu->kvm_run_mmap_size, PROT_READ | PROT_WRITE,
                        MAP_SHARED, vcpu->vcpu_fd, 0);
 
@@ -260,6 +296,10 @@ void kvm_run_vm(struct kvm *kvm) {
 }
 
 int main(int argc, char **argv) {
+#ifdef CPU_AFFINITY
+  BIND_CPU(PCPU_NUM-1);
+#endif
+
   int ret = 0;
   struct kvm *kvm = kvm_init();
 
